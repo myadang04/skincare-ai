@@ -8,11 +8,7 @@ Usage:
     results = run(ingredients, skin_type, concerns)
 """
 
-import os
-import pandas as pd
-from model.predict import predict_ingredients_batch, load_ingredients
-
-DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "processed", "ingredients_final.csv")
+from model.predict import predict_ingredients_batch
 
 LABEL_COLORS = {
     "good fit":            "#2e7d32",   # green
@@ -55,8 +51,7 @@ def run(ingredients: list, skin_type: str, concerns: list) -> dict:
     raw_results = predict_ingredients_batch(ingredients, skin_type, concerns)
 
     # ── 2. Separate found vs not-found ────────────────────────────────────
-    found   = [r for r in raw_results if r["found"]]
-    missing = [r for r in raw_results if not r["found"]]
+    found = [r for r in raw_results if r["found"]]
 
     # ── 3. Overall label = worst label among found ingredients ────────────
     priority = {"poor fit": 2, "possible irritation": 1, "good fit": 0, "unknown": -1}
@@ -86,14 +81,13 @@ def run(ingredients: list, skin_type: str, concerns: list) -> dict:
     }
 
 
-def _get_suggestions(skin_type: str, concerns: list[str], exclude: list[str], top_n: int = 3) -> list[dict]:
+def _get_suggestions(skin_type: str, concerns: list, exclude: list, top_n: int = 3) -> list:
     """
     Return top_n ingredients from the dataset that are a 'good fit'
     for this skin profile and not already in the product.
     Ranked by number of matched concerns + breadth_score.
     """
     from model.predict import predict_ingredient, load_ingredients
-    import ast
 
     df = load_ingredients()
     exclude_lower = {e.lower().strip() for e in exclude}

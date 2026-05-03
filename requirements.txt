@@ -1,9 +1,7 @@
-anthropic>=0.40.0
 streamlit
 pandas
 scikit-learn
 pillow
-python-dotenv
 opencv-python
 pytesseract
 numpy
