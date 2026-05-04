@@ -2,9 +2,9 @@ streamlit
 pandas
 scikit-learn
 pillow
-opencv-python
+opencv-python-headless
 pytesseract
 numpy
-grog
+groq
 python-dotenv
 thefuzz
