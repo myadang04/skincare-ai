@@ -5,3 +5,6 @@ pillow
 opencv-python
 pytesseract
 numpy
+grog
+python-dotenv
+thefuzz
