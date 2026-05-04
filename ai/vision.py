@@ -47,14 +47,44 @@ def run_ocr(image: np.ndarray) -> str:
     return pytesseract.image_to_string(image, lang="eng", config=config)
 
 
+def _rejoin_hyphens(text: str) -> str:
+    """
+    Rejoin words that OCR split across lines with a hyphen.
+    
+    Examples:
+        'Dipropy-\\nlene Glycol'  → 'Dipropylene Glycol'
+        'Dipropy- lene Glycol'   → 'Dipropylene Glycol'
+        'Cerami-\\nde NP'        → 'Ceramide NP'
+        'Polyacry-\\nlate'       → 'Polyacrylate'
+    
+    BUT preserves intentional hyphens like:
+        'Beta-Glucan'            → 'Beta-Glucan'   (no space/newline after hyphen)
+        '1,2-Hexanediol'         → '1,2-Hexanediol'
+    """
+    # Pattern: hyphen followed by optional whitespace including newlines,
+    # then a lowercase letter (indicates a word continuation, not a new word)
+    text = re.sub(r"-\s*\n\s*", "-", text)        # collapse hyphen-newline first
+    text = re.sub(r"-\s+([a-z])", r"\1", text)     # 'Dipropy- lene' → 'Dipropylene'
+    return text
+
+
 def extract_ingredients_block(text: str) -> Optional[str]:
     """Isolate the ingredients section from raw OCR text."""
+    # --- NEW: rejoin hyphenated line breaks BEFORE collapsing whitespace ---
+    text = _rejoin_hyphens(text)
+    
     cleaned = re.sub(r"\s+", " ", text).strip()
 
+    # --- IMPROVED: broader patterns that catch multilingual headers ---
     patterns = [
+        # "Ingredients / Ingrédients :" or "Ingredients/Ingrédients:"
+        r"ingredients?\s*/\s*ingr[eé]dients?\s*[:\-]\s*(.*)",
+        # Standard English headers
         r"ingredients?\s*[:\-]\s*(.*)",
         r"ingredient\s*list\s*[:\-]\s*(.*)",
         r"active ingredients?\s*[:\-]\s*(.*)",
+        # French-first labels
+        r"ingr[eé]dients?\s*[:\-]\s*(.*)",
     ]
     for pattern in patterns:
         match = re.search(pattern, cleaned, flags=re.IGNORECASE)
@@ -88,12 +118,35 @@ def clean_ingredients_text(ingredients_text: str) -> str:
     return text
 
 
+def _normalize_ingredient_name(name: str) -> str:
+    """
+    Clean up a single ingredient name after splitting.
+    
+    Strips parenthetical-only entries, trailing/leading junk,
+    and normalizes common OCR misreads.
+    """
+    # Remove leading/trailing whitespace and periods
+    name = name.strip(" .")
+    
+    # Fix common OCR misreads
+    name = name.replace("lron", "Iron")    # lowercase-L read as I
+    name = name.replace("0xide", "Oxide")  # zero read as O
+    
+    return name
+
+
 def split_ingredients(ingredients_text: str) -> List[str]:
     """Split a cleaned ingredient string into individual ingredient names."""
-    parts = [part.strip(" .") for part in ingredients_text.split(",")]
+    parts = [_normalize_ingredient_name(part) for part in ingredients_text.split(",")]
     return [
         part for part in parts
-        if len(part) >= 2 and not re.fullmatch(r"[\W_]+", part)
+        if (
+            len(part) >= 2
+            and not re.fullmatch(r"[\W_]+", part)
+            # Filter out entries that are ONLY a parenthetical like "(Aqua)"
+            # but keep entries that CONTAIN parentheticals like "Water (Aqua)"
+            and not re.fullmatch(r"\(.*\)", part.strip())
+        )
     ]
 
 

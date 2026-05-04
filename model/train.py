@@ -135,6 +135,11 @@ def derive_label(features: dict) -> int:
     """
     Rule-based label derivation.
     Returns 0 = good fit, 1 = possible irritation, 2 = poor fit
+
+    IMPORTANT: The label depends on whether avoid_triggered is set,
+    which already encodes the skin-type check. An ingredient is only
+    "poor fit" if the user's specific skin type is in the avoid list.
+    High sensitivity alone does NOT make it poor fit for tolerant skin.
     """
     s = features["sensitivity_score"]
     avoid = features["avoid_triggered"]
@@ -142,28 +147,37 @@ def derive_label(features: dict) -> int:
     breadth = features["breadth_score"]
     is_sensitive = features["is_sensitive"]
 
-    # Poor fit: directly flagged in avoid + moderate-to-high sensitivity
-    if s >= 3 and is_sensitive:
-        return 2
+    # ── POOR FIT ──
+    # Skin type is in avoid list AND high sensitivity
     if avoid and s >= 2:
         return 2
+    # Sensitive skin flagged AND sensitivity >= 1
+    if avoid and is_sensitive and s >= 1:
+        return 2
 
-    # Possible irritation: flagged in avoid (but low sensitivity), or high sensitivity for sensitive skin
+    # ── POSSIBLE IRRITATION ──
+    # Skin type is in avoid list but low sensitivity
     if avoid:
         return 1
-    if s >= 2 and is_sensitive:
-        return 1
-    if s >= 3:
-        return 1
+    # High sensitivity for Combination skin (cautious)
+    if s >= 3 and not (features.get("is_oily", 0) or features.get("is_dry", 0)):
+        # Only flag as possible irritation if not Oily/Dry (which would
+        # have been caught by avoid_triggered above if relevant)
+        if not is_sensitive:  # Sensitive would have been caught above
+            return 1
 
-    # Good fit: addresses at least one concern, or broadly beneficial
-    if match > 0 and s <= 1:
+    # ── GOOD FIT ──
+    # Addresses concerns and not flagged
+    if match >= 2:
+        return 0
+    if match >= 1 and s <= 1:
         return 0
     if breadth >= 3 and s == 0:
         return 0
     if s <= 1:
         return 0
 
+    # Moderate sensitivity, no concern match, not flagged
     return 1
 
 
@@ -190,10 +204,14 @@ def generate_training_data(df: pd.DataFrame) -> pd.DataFrame:
         ldf = pd.read_csv(LABELS_PATH)
         # key: (ingredient_name, skin_type, concerns_str)
         for _, r in ldf.iterrows():
-            ai_labels[(r["ingredient_name"], r["skin_type"], r["concerns"])] = int(r["label_int"])
+            # Normalize the label to int
+            label_val = r.get("label_int", r.get("label"))
+            if isinstance(label_val, str):
+                label_val = {"good fit": 0, "possible irritation": 1, "poor fit": 2}.get(label_val, 1)
+            ai_labels[(r["ingredient_name"], r["skin_type"], r["concerns"])] = int(label_val)
         print(f"  AI labels loaded: {len(ai_labels)} pairs from {LABELS_PATH}")
     else:
-        print("  No labeled_pairs.csv found — using rule-based labels (run data/generate_labels.py to get real labels)")
+        print("  No labeled_pairs.csv found — using rule-based labels")
 
     rows = []
     ai_count = 0
