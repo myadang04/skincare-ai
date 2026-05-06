@@ -6,12 +6,10 @@ An AI-powered web app that analyzes skincare product labels and tells you whethe
 
 ## Features
 
-- **OCR ingredient extraction** — uses OpenCV + Tesseract to read ingredient lists from product label photos
-- **ML-powered analysis** — a scikit-learn model classifies each ingredient as *Good Fit*, *Possible Irritation*, or *Poor Fit* based on your skin profile
-- **Per-ingredient breakdown** — sensitivity score, breadth of benefit, matched concerns, and model confidence
-- **Smart suggestions** — recommends the top 3 ingredients that would work better for your skin type and concerns
-- **Plain-English summary** — clear overall verdict so you know whether to buy, patch-test, or avoid
-
+- **OCR ingredient extraction**: read ingredient lists from product label photos
+- **ML-powered analysis**: a model classifies each ingredient as *Good Fit*, *Possible Irritation*, or *Poor Fit* based on your skin profile
+- **Per-ingredient breakdown**: sensitivity score, breadth of benefit, matched concerns, and model confidence
+- **Smart suggestions**: recommends the top 3 ingredients that would work better for your skin type and concerns
 
 ---
 
@@ -82,7 +80,7 @@ If you are on macOS or Linux and Tesseract is on your PATH, no changes to `.env`
 streamlit run app.py
 ```
 
-The app will open in your browser at `http://localhost:8501`.
+The app will open in your browser.
 
 ---
 
