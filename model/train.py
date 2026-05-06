@@ -1,5 +1,6 @@
 import os
 import ast
+import re
 import pickle
 import warnings
 import numpy as np
@@ -51,6 +52,46 @@ CONCERN_TO_AVOID = {
     "Dryness": ["Dry Skin"],
 }
 
+# ── Description keyword groups ────────────────────────────────────────────
+# These extract text-based signals from ingredient descriptions that the
+# LLM used when generating labels but the original model couldn't see.
+DESC_KEYWORD_GROUPS = {
+    "desc_soothing": [
+        "soothing", "calming", "calm", "gentle", "anti-irritant",
+        "soothes", "soothe", "alleviates", "relieves",
+    ],
+    "desc_exfoliant": [
+        "exfoliat", "peel", "dissolving", "keratin", "dead skin cells",
+        "cell turnover", "skin renewal",
+    ],
+    "desc_anti_inflammatory": [
+        "anti-inflammatory", "anti inflammatory", "reduces redness",
+        "reduce redness", "inflammation", "inflammatory",
+    ],
+    "desc_antioxidant": [
+        "antioxidant", "free radical", "oxidative", "neutralis",
+        "neutraliz",
+    ],
+    "desc_brightening": [
+        "brightening", "brighten", "pigmentation", "melanin",
+        "tyrosinase", "dark spots", "hyperpigmentation", "lightening",
+        "even skin tone", "evening out",
+    ],
+}
+
+
+def extract_description_features(description: str) -> dict:
+    """
+    Extract keyword-based features from ingredient description text.
+    Returns a dict of binary flags indicating presence of each keyword group.
+    """
+    desc_lower = str(description).lower() if pd.notna(description) else ""
+    features = {}
+    for feature_name, keywords in DESC_KEYWORD_GROUPS.items():
+        features[feature_name] = int(any(kw in desc_lower for kw in keywords))
+    return features
+
+
 # Diverse user profiles used to generate training data
 SAMPLE_PROFILES = [
     ("Sensitive", ["Acne", "Redness"]),
@@ -101,7 +142,7 @@ def compute_features(row, skin_type: str, concerns: list) -> dict:
     target_goodfor = set()
     for c in concerns:
         target_goodfor.update(CONCERN_TO_GOODFOR.get(c, [c]))
-    target_goodfor.add("Anyone")  # universal ingredient always counts as a match
+    target_goodfor.add("Anyone")
 
     concern_match_count = sum(1 for g in good_for if g in target_goodfor)
     concern_match_ratio = concern_match_count / max(len(concerns), 1)
@@ -116,7 +157,8 @@ def compute_features(row, skin_type: str, concerns: list) -> dict:
 
     avoid_triggered = int(any(a in avoid_tags for a in avoid))
 
-    return {
+    # Base features
+    feats = {
         "sensitivity_score": row["sensitivity_score"],
         "breadth_score": row["breadth_score"],
         "pregnancy_safe": int(bool(row["pregnancy_safe"])),
@@ -130,16 +172,17 @@ def compute_features(row, skin_type: str, concerns: list) -> dict:
         "good_for_count": len(good_for),
     }
 
+    # Description-based text features
+    desc_feats = extract_description_features(row.get("description", ""))
+    feats.update(desc_feats)
+
+    return feats
+
 
 def derive_label(features: dict) -> int:
     """
     Rule-based label derivation.
     Returns 0 = good fit, 1 = possible irritation, 2 = poor fit
-
-    IMPORTANT: The label depends on whether avoid_triggered is set,
-    which already encodes the skin-type check. An ingredient is only
-    "poor fit" if the user's specific skin type is in the avoid list.
-    High sensitivity alone does NOT make it poor fit for tolerant skin.
     """
     s = features["sensitivity_score"]
     avoid = features["avoid_triggered"]
@@ -148,26 +191,19 @@ def derive_label(features: dict) -> int:
     is_sensitive = features["is_sensitive"]
 
     # ── POOR FIT ──
-    # Skin type is in avoid list AND high sensitivity
     if avoid and s >= 2:
         return 2
-    # Sensitive skin flagged AND sensitivity >= 1
     if avoid and is_sensitive and s >= 1:
         return 2
 
     # ── POSSIBLE IRRITATION ──
-    # Skin type is in avoid list but low sensitivity
     if avoid:
         return 1
-    # High sensitivity for Combination skin (cautious)
     if s >= 3 and not (features.get("is_oily", 0) or features.get("is_dry", 0)):
-        # Only flag as possible irritation if not Oily/Dry (which would
-        # have been caught by avoid_triggered above if relevant)
-        if not is_sensitive:  # Sensitive would have been caught above
+        if not is_sensitive:
             return 1
 
     # ── GOOD FIT ──
-    # Addresses concerns and not flagged
     if match >= 2:
         return 0
     if match >= 1 and s <= 1:
@@ -177,7 +213,6 @@ def derive_label(features: dict) -> int:
     if s <= 1:
         return 0
 
-    # Moderate sensitivity, no concern match, not flagged
     return 1
 
 
@@ -186,6 +221,9 @@ FEATURE_COLS = [
     "concern_match_count", "concern_match_ratio", "avoid_triggered",
     "is_sensitive", "is_oily", "is_dry",
     "num_concerns", "good_for_count", "category_enc",
+    # Description-based text features
+    "desc_soothing", "desc_exfoliant", "desc_anti_inflammatory",
+    "desc_antioxidant", "desc_brightening",
 ]
 
 
@@ -202,9 +240,7 @@ def generate_training_data(df: pd.DataFrame) -> pd.DataFrame:
     ai_labels: dict = {}
     if os.path.exists(LABELS_PATH):
         ldf = pd.read_csv(LABELS_PATH)
-        # key: (ingredient_name, skin_type, concerns_str)
         for _, r in ldf.iterrows():
-            # Normalize the label to int
             label_val = r.get("label_int", r.get("label"))
             if isinstance(label_val, str):
                 label_val = {"good fit": 0, "possible irritation": 1, "poor fit": 2}.get(label_val, 1)
@@ -281,6 +317,12 @@ def train_and_evaluate():
     print(f"  {len(FEATURE_COLS)} features: {FEATURE_COLS}")
     print(f"  Feature matrix shape: {X.shape}")
 
+    # Show description feature coverage
+    desc_cols = [c for c in FEATURE_COLS if c.startswith("desc_")]
+    for col in desc_cols:
+        pct = combined[col].mean() * 100
+        print(f"    {col}: {pct:.1f}% of ingredients have this keyword")
+
     # ------------------------------------------------------------------ #
     # STEP 4: Train/test split
     # ------------------------------------------------------------------ #
@@ -304,7 +346,6 @@ def train_and_evaluate():
     print("STEP 5 — Training & comparing 5 models (5-fold CV + held-out test)")
     print("=" * 60)
 
-    # (model, needs_scaling)
     models = {
         "Logistic Regression": (LogisticRegression(max_iter=1000, random_state=42), True),
         "Random Forest":       (RandomForestClassifier(n_estimators=200, random_state=42), False),
@@ -391,6 +432,7 @@ def train_and_evaluate():
         "concern_to_goodfor": CONCERN_TO_GOODFOR,
         "concern_to_avoid": CONCERN_TO_AVOID,
         "skin_type_to_avoid": SKIN_TYPE_TO_AVOID,
+        "desc_keyword_groups": DESC_KEYWORD_GROUPS,
     }
     model_path = os.path.join(MODEL_DIR, "ingredient_classifier.pkl")
     with open(model_path, "wb") as f:
