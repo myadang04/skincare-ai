@@ -1,6 +1,6 @@
 # 🧴 Skincare Match Tool
 
-An AI-powered web app that analyzes skincare product labels and tells you whether a product is right for your skin. Upload a photo of an ingredient list, select your skin type and concerns, and get a detailed breakdown of every ingredient — flagged or approved — with personalized suggestions for better alternatives.
+An AI-powered web app that analyzes skincare product labels and tells you whether a product is right for your skin. Upload a photo of an ingredient list, select your skin type and concerns, and get a detailed breakdown of every ingredient, with personalized suggestions for better alternatives.
 
 ---
 
@@ -12,22 +12,6 @@ An AI-powered web app that analyzes skincare product labels and tells you whethe
 - **Smart suggestions** — recommends the top 3 ingredients that would work better for your skin type and concerns
 - **Plain-English summary** — clear overall verdict so you know whether to buy, patch-test, or avoid
 
----
-
-## Project Structure
-
-```
-skincare-ai/
-├── ai/
-│   └── vision.py          # OCR: image preprocessing + Tesseract extraction
-├── data/                  # Ingredient dataset (CSV)
-├── model/
-│   └── predict.py         # ML model loading, prediction logic
-├── app.py                 # Streamlit UI
-├── pipeline.py            # End-to-end analysis pipeline
-├── requirements.txt
-└── .env                   # Environment variables (API keys, etc.)
-```
 
 ---
 
@@ -113,39 +97,3 @@ The app will:
 - Extract ingredients from the label via OCR
 - Run each ingredient through the ML model against your profile
 - Show an overall fit verdict, a per-ingredient breakdown, and top suggestions
-
----
-
-## Dependencies
-
-| Package | Purpose |
-|---|---|
-| `streamlit` | Web UI |
-| `scikit-learn` | ML model (classification) |
-| `pandas` | Ingredient dataset handling |
-| `pillow` | Image loading |
-| `opencv-python` | Image preprocessing for OCR |
-| `pytesseract` | Python wrapper for Tesseract OCR |
-| `numpy` | Numerical operations |
-
----
-
-## Troubleshooting
-
-**`TesseractNotFoundError`** — Tesseract is not installed or not on your PATH. Follow the installation steps above and ensure the binary is accessible.
-
-**No ingredients detected** — Try a clearer, better-lit photo of the ingredient list. Avoid glare and crop tightly around the text.
-
-**Slow first run** — The ML model loads and the ingredient dataset is read on first use; subsequent analyses in the same session will be faster.
-
----
-
-## Contributing
-
-Pull requests are welcome. For major changes, please open an issue first to discuss what you'd like to change.
-
----
-
-## License
-
-This project does not currently specify a license. Contact the repository owner for usage permissions.
